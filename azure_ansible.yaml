@@ -1,0 +1,249 @@
+- name: AKS Demo Ansible Playbook on Azure Cloud Shell
+  hosts: localhost
+  vars:
+    resource_group_name: myrsg
+    subscription_id: na
+    tenant_id: na
+    contributor_roleid: b24988ac-6180-42a0-ab88-20f7382dd24c
+    msi_name: mymsi
+    vnet_name: myvnet
+    subnet1_name: mysbt1
+    subnet2_name: mysbt2
+    dns_name: cluster.name
+    cluster_name: mycluster
+    location: westeurope
+  tasks:
+  - name: Ensure Resource Group
+    azure_rm_resourcegroup:
+      name: "{{ resource_group_name }}"
+      location: "{{ location }}"
+
+  - name: Ensure User MSI
+    azure_rm_resource:
+      resource_group: "{{ resource_group_name }}"
+      provider: ManagedIdentity
+      resource_type: userAssignedIdentities
+      resource_name: "{{ msi_name }}"
+      api_version: '2018-11-30'
+      idempotency: yes
+      state: present
+      body:
+        location: "{{ location }}"
+    register: usermsi_out
+
+  - name: Sleep for 30 seconds and continue with play
+    wait_for:
+      timeout: 30
+    delegate_to: localhost
+
+  - name: Ensure Role Assignment of User MSI to Contributor
+    azure_rm_roleassignment:
+      scope: "/subscriptions/{{ subscription_id }}"
+      assignee_object_id: "{{ usermsi_out.response.properties.principalId }}"
+      role_definition_id:
+        "/subscriptions/{{ subscription_id }}/providers/Microsoft.Authorization/roleDefinitions/{{ contributor_roleid }}"
+
+  - name: Ensure VNet
+    azure_rm_virtualnetwork:
+      resource_group: "{{ resource_group_name }}"
+      name: "{{ vnet_name }}"
+      address_prefixes_cidr:
+        - "10.1.0.0/16"
+  - name: Ensure Subnet 1
+    azure_rm_subnet:
+      resource_group: "{{ resource_group_name }}"
+      virtual_network_name: "{{ vnet_name }}"
+      name: "{{ subnet1_name }}"
+      address_prefix_cidr: "10.1.0.0/24"
+  - name: Ensure Subnet 2
+    azure_rm_subnet:
+      resource_group: "{{ resource_group_name }}"
+      virtual_network_name: "{{ vnet_name }}"
+      name: "{{ subnet2_name }}"
+      address_prefix_cidr: "10.1.1.0/24"
+
+  - name: Ensure Private DNS
+    azure_rm_resource:
+      resource_group: "{{ resource_group_name }}"
+      provider: Network
+      resource_type: privateDnsZones
+      resource_name: "{{ dns_name}}"
+      api_version: '2018-09-01'
+      body:
+        location: Global
+
+  - name: Sleep for 30 seconds and continue with play
+    wait_for:
+      timeout: 30
+    delegate_to: localhost
+
+  - name: Link p dns to vnet
+    azure_rm_resource:
+      api_version: '2018-09-01'
+      resource_group: "{{ resource_group_name }}"
+      provider: network
+      resource_type: privatednszones
+      resource_name: "{{ dns_name}}"
+      subresource:
+        - type: virtualnetworklinks
+          name: link1
+      body:
+        location: Global
+        properties:
+          virtualNetwork:
+            id: "/subscriptions/{{ subscription_id }}/resourceGroups/{{ resource_group_name }}/providers/Microsoft.Network/virtualNetworks/{{ vnet_name }}"
+          registrationEnabled: false
+
+
+  - name: Ensure AKS Cluster
+    azure_rm_resource:
+      api_version: '2020-09-01'
+      resource_group: "{{ resource_group_name }}"
+      provider: ContainerService
+      resource_type: managedClusters
+      resource_name: "{{ cluster_name }}"
+      idempotency: yes
+      body:
+        {
+        "id": "/subscriptions/{{ subscription_id }}/resourcegroups/{{ resource_group_name }}/providers/Microsoft.ContainerService/managedClusters/{{ cluster_name }}",
+        "location": "{{ location }}",
+        "name": "{{ cluster_name }}",
+        "type": "Microsoft.ContainerService/ManagedClusters",
+        "properties": {
+         "kubernetesVersion": "1.17.13",
+         "dnsPrefix": "adrianhynes",
+         "agentPoolProfiles": [
+          {
+           "name": "nodepool1",
+           "count": 1,
+           "vmSize": "Standard_DS2_v2",
+           "osDiskSizeGB": 128,
+           "osDiskType": "Managed",
+           "vnetSubnetID": "/subscriptions/{{ subscription_id }}/resourceGroups/{{ resource_group_name }}/providers/Microsoft.Network/virtualNetworks/{{ vnet_name }}/subnets/{{ subnet1_name }}",
+           "maxPods": 30,
+           "type": "VirtualMachineScaleSets",
+           "availabilityZones": [
+            "1"
+           ],
+           "orchestratorVersion": "1.17.13",
+           "enableNodePublicIP": false,
+           "nodeLabels": {},
+           "mode": "System",
+           "osType": "Linux",
+           "nodeImageVersion": "AKSUbuntu-1604-2020.10.28"
+          }
+         ],
+         "linuxProfile": {
+          "adminUsername": "azureuser",
+          "ssh": {
+           "publicKeys": [
+            {
+             "keyData": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCj7MYU2Glrmm5EaOtH5oB98xgSRUuewGBLDTEZzWEVzlCxpGQBwGNbeJhiCCyhYx6hFmNEZKFtGJQudOEl3cVaDRdqiDFgiwrF3frj1OnOP/86bPtayGW7zeStjpBSq2yKQshfzhAcvjAe6MIkebkBPnLToKIKWcJbpHo6s/0dMgjvPCz4aLOle55w6p68Tkklp2AG3Vgirmpm2quB2CqdRZJiQQH7xMjpdLI5eAhWbssE4J4na8aBc1B1nX49LXDQNZ1FS8QaPhhyA5WklAM3cDLwFrDx1A8wFsXqLbh2HUsbvA7XBuEzk395ZhQeS5x1YoMgvg+gJ3N1ZZCZUkTp"
+            }
+           ]
+          }
+         },
+         "servicePrincipalProfile": {
+          "clientId": "msi"
+         },
+         "addonProfiles": {
+          "KubeDashboard": {
+           "enabled": false,
+           "config": null
+          }
+         },
+         "enableRBAC": true,
+         "networkProfile": {
+          "networkPlugin": "azure",
+          "loadBalancerSku": "standard",
+          "loadBalancerProfile": {
+           "managedOutboundIPs": {
+            "count": 1
+           }
+          },
+          "serviceCidr": "10.0.0.0/16",
+          "dnsServiceIP": "10.0.0.10",
+          "dockerBridgeCidr": "172.17.0.1/16",
+          "outboundType": "loadBalancer"
+         },
+         "aadProfile": {
+          "managed": true,
+          "adminGroupObjectIDs": null,
+          "tenantID": "{{ tenant_id }}"
+         },
+         "maxAgentPools": 10
+        },
+        "identity": {
+          "type": "SystemAssigned"
+        },
+        "sku": {
+         "name": "Basic",
+         "tier": "Free"
+        }
+       }
+
+  - name: Sleep for 60 seconds and continue with play
+    wait_for:
+      timeout: 60
+    delegate_to: localhost
+
+  - name: Ensure Cluster System Managed Identity available
+    azure_rm_resource_info:
+      resource_group: "{{ resource_group_name }}"
+      provider: ContainerService
+      resource_type: ManagedClusters
+      resource_name: "{{ cluster_name }}"
+      api_version: '2020-11-01'
+    register: system_msi
+
+  - debug:
+      var: system_msi.response[0].identity.principalId
+
+  - name: Ensure Role Assignment of Cluster System Managed Identity and Contributor 
+    azure_rm_roleassignment:
+      scope: "/subscriptions/{{ subscription_id }}"
+      assignee_object_id: "{{ system_msi.response[0].identity.principalId }}"
+      role_definition_id:
+        "/subscriptions/{{ subscription_id }}/providers/Microsoft.Authorization/roleDefinitions/{{ virtual_machine_contributor_roleid }}"
+
+
+  - name: Ensure Node Resource Group
+    azure_rm_resource_info:
+      resource_group: "{{ resource_group_name }}"
+      provider: ContainerService
+      resource_type: ManagedClusters
+      resource_name: "{{ cluster_name }}"
+      api_version: '2020-11-01'
+    register: out
+  - debug:
+       var: out.response[0].properties.nodeResourceGroup
+
+  - name: Sleep for 300 seconds and continue with play
+    wait_for:
+      timeout: 300
+    delegate_to: localhost
+
+
+  - name: Get all resources in MC resource group
+    azure_rm_resourcegroup_info:
+      name: "{{ out.response[0].properties.nodeResourceGroup }}"
+      list_resources: yes
+    register: out1
+
+  - name: Filter VMScaleSet
+    set_fact:
+      tmp1: "{{ item.name }}"
+    with_items: "{{ out1.resourcegroups[0].resources }}"
+    when: item.type == "Microsoft.Compute/virtualMachineScaleSets"
+
+  - debug:
+      var: tmp1
+
+
+  - name: Ensure Assign Identity to VmScalesSet
+    shell:
+      cmd: "az vmss identity assign -g {{out.response[0].properties.nodeResourceGroup }} -n {{ tmp1 }} --identities {{ usermsi_out.response.id }}"
+    register: vmss
+
+  - debug:
+      var: vmss
