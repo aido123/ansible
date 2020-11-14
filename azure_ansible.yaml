@@ -1,17 +1,19 @@
 - name: AKS Demo Ansible Playbook on Azure Cloud Shell
   hosts: localhost
   vars:
-    resource_group_name: myrsg
-    subscription_id: na
-    tenant_id: na
+    resource_group_name: clusterrg
+    subscription_id: ABC-123
+    tenant_id: XYZ-123
     contributor_roleid: b24988ac-6180-42a0-ab88-20f7382dd24c
-    msi_name: mymsi
-    vnet_name: myvnet
-    subnet1_name: mysbt1
-    subnet2_name: mysbt2
-    dns_name: cluster.name
-    cluster_name: mycluster
+    msi_name: msi
+    vnet_name: adrian-vnet
+    subnet1_name: adrian-sbt1
+    subnet2_name: adrian-sbt2
+    dns_name: hynes.pri
+    cluster_name: cluster
     location: westeurope
+    vm_password: hard2Guess80542
+    vm_username: myuser
   tasks:
   - name: Ensure Resource Group
     azure_rm_resourcegroup:
@@ -31,7 +33,7 @@
         location: "{{ location }}"
     register: usermsi_out
 
-  - name: Sleep for 30 seconds and continue with play
+  - name: Sleep for 30 seconds to make sure Msi created
     wait_for:
       timeout: 30
     delegate_to: localhost
@@ -48,19 +50,19 @@
       resource_group: "{{ resource_group_name }}"
       name: "{{ vnet_name }}"
       address_prefixes_cidr:
-        - "10.1.0.0/16"
+        - "10.240.0.0/16"
   - name: Ensure Subnet 1
     azure_rm_subnet:
       resource_group: "{{ resource_group_name }}"
       virtual_network_name: "{{ vnet_name }}"
       name: "{{ subnet1_name }}"
-      address_prefix_cidr: "10.1.0.0/24"
+      address_prefix_cidr: "10.240.0.0/24"
   - name: Ensure Subnet 2
     azure_rm_subnet:
       resource_group: "{{ resource_group_name }}"
       virtual_network_name: "{{ vnet_name }}"
       name: "{{ subnet2_name }}"
-      address_prefix_cidr: "10.1.1.0/24"
+      address_prefix_cidr: "10.240.1.0/24"
 
   - name: Ensure Private DNS
     azure_rm_resource:
@@ -72,12 +74,12 @@
       body:
         location: Global
 
-  - name: Sleep for 30 seconds and continue with play
+  - name: Sleep for 30 seconds to make sure private dns created ok
     wait_for:
       timeout: 30
     delegate_to: localhost
 
-  - name: Link p dns to vnet
+  - name: Link private dns to vnet
     azure_rm_resource:
       api_version: '2018-09-01'
       resource_group: "{{ resource_group_name }}"
@@ -182,10 +184,23 @@
         }
        }
 
-  - name: Sleep for 60 seconds and continue with play
-    wait_for:
-      timeout: 60
-    delegate_to: localhost
+  - name: Create Windows VM
+    azure_rm_virtualmachine:
+      resource_group: "{{ resource_group_name }}"
+      name: vm1
+      admin_username: "{{ vm_username }}"
+      admin_password: "{{ vm_password }}"
+      location: "{{ location }}"
+      subnet_name: "{{ subnet2_name }}"
+      virtual_network_name: "{{ vnet_name }}"
+      vm_size: Standard_DS1_v2
+      os_type: Windows
+      image:
+        offer: WindowsServer
+        publisher: MicrosoftWindowsServer
+        sku: 2016-Datacenter
+        version: latest
+
 
   - name: Ensure Cluster System Managed Identity available
     azure_rm_resource_info:
@@ -204,7 +219,7 @@
       scope: "/subscriptions/{{ subscription_id }}"
       assignee_object_id: "{{ system_msi.response[0].identity.principalId }}"
       role_definition_id:
-        "/subscriptions/{{ subscription_id }}/providers/Microsoft.Authorization/roleDefinitions/{{ virtual_machine_contributor_roleid }}"
+        "/subscriptions/{{ subscription_id }}/providers/Microsoft.Authorization/roleDefinitions/{{ contributor_roleid }}"
 
 
   - name: Ensure Node Resource Group
@@ -214,9 +229,9 @@
       resource_type: ManagedClusters
       resource_name: "{{ cluster_name }}"
       api_version: '2020-11-01'
-    register: out
+    register: nodersggroup
   - debug:
-       var: out.response[0].properties.nodeResourceGroup
+       var: nodersggroup.response[0].properties.nodeResourceGroup
 
   - name: Sleep for 300 seconds and continue with play
     wait_for:
@@ -226,24 +241,24 @@
 
   - name: Get all resources in MC resource group
     azure_rm_resourcegroup_info:
-      name: "{{ out.response[0].properties.nodeResourceGroup }}"
+      name: "{{ nodersggroup.response[0].properties.nodeResourceGroup }}"
       list_resources: yes
-    register: out1
+    register: allresources
 
   - name: Filter VMScaleSet
     set_fact:
-      tmp1: "{{ item.name }}"
-    with_items: "{{ out1.resourcegroups[0].resources }}"
+      vmssname: "{{ item.name }}"
+    with_items: "{{ allresources.resourcegroups[0].resources }}"
     when: item.type == "Microsoft.Compute/virtualMachineScaleSets"
 
   - debug:
-      var: tmp1
+      var: vmssname
 
 
   - name: Ensure Assign Identity to VmScalesSet
     shell:
-      cmd: "az vmss identity assign -g {{out.response[0].properties.nodeResourceGroup }} -n {{ tmp1 }} --identities {{ usermsi_out.response.id }}"
-    register: vmss
+      cmd: "az vmss identity assign -g {{nodersggroup.response[0].properties.nodeResourceGroup }} -n {{ vmssname }} --identities {{ usermsi_out.response.id }}"
+    register: vmssassigndetails
 
   - debug:
-      var: vmss
+      var: vmssassigndetails
