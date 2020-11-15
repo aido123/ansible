@@ -2,10 +2,10 @@
   hosts: localhost
   vars:
     resource_group_name: clusterrg
-    subscription_id: ABC-123
-    tenant_id: XYZ-123
+    subscription_id: b4202fc8-1ef5-4ba4-bdd0-4a7908e282e6
+    tenant_id: 9b411214-6cd9-4672-9034-b55bf7d44b12
     contributor_roleid: b24988ac-6180-42a0-ab88-20f7382dd24c
-    msi_name: msi
+    msi_name: msi3
     vnet_name: adrian-vnet
     subnet1_name: adrian-sbt1
     subnet2_name: adrian-sbt2
@@ -233,31 +233,42 @@
   - debug:
        var: nodersggroup.response[0].properties.nodeResourceGroup
 
-  - name: Sleep for 300 seconds and continue with play
-    wait_for:
-      timeout: 300
-    delegate_to: localhost
+#  - name: Sleep for 300 seconds and continue with play
+#    wait_for:
+#      timeout: 300
+#    delegate_to: localhost
 
 
-  - name: Get all resources in MC resource group
-    azure_rm_resourcegroup_info:
-      name: "{{ nodersggroup.response[0].properties.nodeResourceGroup }}"
-      list_resources: yes
-    register: allresources
+  - name: Get VMScaleSet info
+    azure_rm_resource_info:
+      resource_group: "{{ nodersggroup.response[0].properties.nodeResourceGroup }}"
+      provider: compute
+      resource_type: virtualmachinescalesets
+      api_version: "2017-12-01"
+    register: vmssresources
+    until: vmssresources.response[0].name is defined
+    retries: 20
+    delay: 60
 
-  - name: Filter VMScaleSet
-    set_fact:
-      vmssname: "{{ item.name }}"
-    with_items: "{{ allresources.resourcegroups[0].resources }}"
-    when: item.type == "Microsoft.Compute/virtualMachineScaleSets"
+#  - name: Get all resources in MC resource group
+#    azure_rm_resourcegroup_info:
+#      name: "{{ nodersggroup.response[0].properties.nodeResourceGroup }}"
+#      list_resources: yes
+#    register: allresources
 
-  - debug:
-      var: vmssname
+#  - name: Filter VMScaleSet
+#    set_fact:
+#      vmssname: "{{ item.name }}"
+#    with_items: "{{ allresources.resourcegroups[0].resources }}"
+#    when: item.type == "Microsoft.Compute/virtualMachineScaleSets"
+
+#  - debug:
+#      var: vmssname
 
 
   - name: Ensure Assign Identity to VmScalesSet
     shell:
-      cmd: "az vmss identity assign -g {{nodersggroup.response[0].properties.nodeResourceGroup }} -n {{ vmssname }} --identities {{ usermsi_out.response.id }}"
+      cmd: "az vmss identity assign -g {{nodersggroup.response[0].properties.nodeResourceGroup }} -n {{ vmssresources.response[0].name }} --identities {{ usermsi_out.response.id }}"
     register: vmssassigndetails
 
   - debug:
