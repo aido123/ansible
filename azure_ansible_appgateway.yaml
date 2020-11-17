@@ -1,0 +1,343 @@
+- name: AKS Demo Ansible Playbook on Azure Cloud Shell
+  hosts: localhost
+  vars:
+    resource_group_name: adrian-group
+    subscription_id: <Subscription ID>
+    tenant_id: <Tenant ID>
+    contributor_roleid: b24988ac-6180-42a0-ab88-20f7382dd24c
+    msi_name: msi3
+    vnet_name: adrian-vnet
+    vnet_cidr: 10.240.0.0/16
+    subnet1_name: adrian-sbt1
+    subnet2_name: adrian-sbt2
+    subnet3_name: adrian-sbt3
+    subnet1_cidr: 10.240.0.0/24
+    subnet2_cidr: 10.240.1.0/24
+    subnet3_cidr: 10.240.2.0/24
+    app_gateway_private_ip: 10.240.2.254
+    dns_name: hynes.pri
+    cluster_name: cluster
+    location: westeurope
+    vm_password: hard2Guess80542
+    vm_username: myuser
+  tasks:
+  - name: Ensure Resource Group
+    azure_rm_resourcegroup:
+      name: "{{ resource_group_name }}"
+      location: "{{ location }}"
+
+  - name: Ensure User MSI
+    azure_rm_resource:
+      resource_group: "{{ resource_group_name }}"
+      provider: ManagedIdentity
+      resource_type: userAssignedIdentities
+      resource_name: "{{ msi_name }}"
+      api_version: '2018-11-30'
+      idempotency: yes
+      state: present
+      body:
+        location: "{{ location }}"
+    register: usermsi_out
+
+  - name: Sleep for 30 seconds to make sure Msi created
+    wait_for:
+      timeout: 30
+    delegate_to: localhost
+
+  - name: Ensure Role Assignment of User MSI to Contributor
+    azure_rm_roleassignment:
+      scope: "/subscriptions/{{ subscription_id }}"
+      assignee_object_id: "{{ usermsi_out.response.properties.principalId }}"
+      role_definition_id:
+        "/subscriptions/{{ subscription_id }}/providers/Microsoft.Authorization/roleDefinitions/{{ contributor_roleid }}"
+
+  - name: Ensure VNet
+    azure_rm_virtualnetwork:
+      resource_group: "{{ resource_group_name }}"
+      name: "{{ vnet_name }}"
+      address_prefixes_cidr:
+        - "{{ vnet_cidr }}"
+  - name: Ensure Subnet 1
+    azure_rm_subnet:
+      resource_group: "{{ resource_group_name }}"
+      virtual_network_name: "{{ vnet_name }}"
+      name: "{{ subnet1_name }}"
+      address_prefix_cidr: "{{ subnet1_cidr }}"
+  - name: Ensure Subnet 2
+    azure_rm_subnet:
+      resource_group: "{{ resource_group_name }}"
+      virtual_network_name: "{{ vnet_name }}"
+      name: "{{ subnet2_name }}"
+      address_prefix_cidr: "{{ subnet2_cidr }}"
+  - name: Ensure Subnet 3
+    azure_rm_subnet:
+      resource_group: "{{ resource_group_name }}"
+      virtual_network_name: "{{ vnet_name }}"
+      name: "{{ subnet3_name }}"
+      address_prefix_cidr: "{{ subnet1_cidr }}"
+
+  - name: Ensure Private DNS
+    azure_rm_resource:
+      resource_group: "{{ resource_group_name }}"
+      provider: Network
+      resource_type: privateDnsZones
+      resource_name: "{{ dns_name}}"
+      api_version: '2018-09-01'
+      body:
+        location: Global
+
+  - name: Sleep for 30 seconds to make sure private dns created ok
+    wait_for:
+      timeout: 30
+    delegate_to: localhost
+
+  - name: Link private dns to vnet
+    azure_rm_resource:
+      api_version: '2018-09-01'
+      resource_group: "{{ resource_group_name }}"
+      provider: network
+      resource_type: privatednszones
+      resource_name: "{{ dns_name}}"
+      subresource:
+        - type: virtualnetworklinks
+          name: link1
+      body:
+        location: Global
+        properties:
+          virtualNetwork:
+            id: "/subscriptions/{{ subscription_id }}/resourceGroups/{{ resource_group_name }}/providers/Microsoft.Network/virtualNetworks/{{ vnet_name }}"
+          registrationEnabled: false
+
+
+  - name: Ensure AKS Cluster
+    azure_rm_resource:
+      api_version: '2020-09-01'
+      resource_group: "{{ resource_group_name }}"
+      provider: ContainerService
+      resource_type: managedClusters
+      resource_name: "{{ cluster_name }}"
+      idempotency: yes
+      body:
+        {
+        "id": "/subscriptions/{{ subscription_id }}/resourcegroups/{{ resource_group_name }}/providers/Microsoft.ContainerService/managedClusters/{{ cluster_name }}",
+        "location": "{{ location }}",
+        "name": "{{ cluster_name }}",
+        "type": "Microsoft.ContainerService/ManagedClusters",
+        "properties": {
+         "kubernetesVersion": "1.17.13",
+         "dnsPrefix": "adrianhynes",
+         "agentPoolProfiles": [
+          {
+           "name": "nodepool1",
+           "count": 1,
+           "vmSize": "Standard_DS2_v2",
+           "osDiskSizeGB": 128,
+           "osDiskType": "Managed",
+           "vnetSubnetID": "/subscriptions/{{ subscription_id }}/resourceGroups/{{ resource_group_name }}/providers/Microsoft.Network/virtualNetworks/{{ vnet_name }}/subnets/{{ subnet1_name }}",
+           "maxPods": 30,
+           "type": "VirtualMachineScaleSets",
+           "availabilityZones": [
+            "1"
+           ],
+           "orchestratorVersion": "1.17.13",
+           "enableNodePublicIP": false,
+           "nodeLabels": {},
+           "mode": "System",
+           "osType": "Linux",
+           "nodeImageVersion": "AKSUbuntu-1604-2020.10.28"
+          }
+         ],
+         "linuxProfile": {
+          "adminUsername": "azureuser",
+          "ssh": {
+           "publicKeys": [
+            {
+             "keyData": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCj7MYU2Glrmm5EaOtH5oB98xgSRUuewGBLDTEZzWEVzlCxpGQBwGNbeJhiCCyhYx6hFmNEZKFtGJQudOEl3cVaDRdqiDFgiwrF3frj1OnOP/86bPtayGW7zeStjpBSq2yKQshfzhAcvjAe6MIkebkBPnLToKIKWcJbpHo6s/0dMgjvPCz4aLOle55w6p68Tkklp2AG3Vgirmpm2quB2CqdRZJiQQH7xMjpdLI5eAhWbssE4J4na8aBc1B1nX49LXDQNZ1FS8QaPhhyA5WklAM3cDLwFrDx1A8wFsXqLbh2HUsbvA7XBuEzk395ZhQeS5x1YoMgvg+gJ3N1ZZCZUkTp"
+            }
+           ]
+          }
+         },
+         "servicePrincipalProfile": {
+          "clientId": "msi"
+         },
+         "addonProfiles": {
+          "KubeDashboard": {
+           "enabled": false,
+           "config": null
+          }
+         },
+         "enableRBAC": true,
+         "networkProfile": {
+          "networkPlugin": "azure",
+          "loadBalancerSku": "standard",
+          "loadBalancerProfile": {
+           "managedOutboundIPs": {
+            "count": 1
+           }
+          },
+          "serviceCidr": "10.0.0.0/16",
+          "dnsServiceIP": "10.0.0.10",
+          "dockerBridgeCidr": "172.17.0.1/16",
+          "outboundType": "loadBalancer"
+         },
+         "aadProfile": {
+          "managed": true,
+          "adminGroupObjectIDs": null,
+          "tenantID": "{{ tenant_id }}"
+         },
+         "maxAgentPools": 10
+        },
+        "identity": {
+          "type": "SystemAssigned"
+        },
+        "sku": {
+         "name": "Basic",
+         "tier": "Free"
+        }
+       }
+
+  - name: Create Windows VM
+    azure_rm_virtualmachine:
+      resource_group: "{{ resource_group_name }}"
+      name: vm1
+      admin_username: "{{ vm_username }}"
+      admin_password: "{{ vm_password }}"
+      location: "{{ location }}"
+      subnet_name: "{{ subnet2_name }}"
+      virtual_network_name: "{{ vnet_name }}"
+      vm_size: Standard_DS1_v2
+      os_type: Windows
+      image:
+        offer: WindowsServer
+        publisher: MicrosoftWindowsServer
+        sku: 2016-Datacenter
+        version: latest
+
+  - name: Create a public ip address
+    azure_rm_publicipaddress:
+      resource_group: "{{ resource_group_name }}"
+      name: pubip2
+      sku: standard
+      allocation_method: static
+
+  - name: Create instance of Application Gateway
+    shell:
+      cmd: "az network application-gateway create -n myApplicationGateway -l {{ location }} -g {{ resource_group_name }} --sku Standard_v2 --public-ip-address pubip2 --subnet subscriptions/{{ subscription_id }}/resourceGroups/{{ resource_group_name }}/providers/Microsoft.Network/virtualNetworks/{{ vnet_name }}/subnets/{{ subnet3_name }} --private-ip-address {{ app_gateway_private_ip }}"
+    register: vmssassigndetails
+
+
+  - name: Ensure Cluster System Managed Identity available
+    azure_rm_resource_info:
+      resource_group: "{{ resource_group_name }}"
+      provider: ContainerService
+      resource_type: ManagedClusters
+      resource_name: "{{ cluster_name }}"
+      api_version: '2020-11-01'
+    register: system_msi
+
+  - debug:
+      var: system_msi.response[0].identity.principalId
+
+  - name: Ensure Role Assignment of Cluster System Managed Identity and Contributor 
+    azure_rm_roleassignment:
+      scope: "/subscriptions/{{ subscription_id }}"
+      assignee_object_id: "{{ system_msi.response[0].identity.principalId }}"
+      role_definition_id:
+        "/subscriptions/{{ subscription_id }}/providers/Microsoft.Authorization/roleDefinitions/{{ contributor_roleid }}"
+
+
+  - name: Ensure Node Resource Group
+    azure_rm_resource_info:
+      resource_group: "{{ resource_group_name }}"
+      provider: ContainerService
+      resource_type: ManagedClusters
+      resource_name: "{{ cluster_name }}"
+      api_version: '2020-11-01'
+    register: nodersggroup
+  - debug:
+       var: nodersggroup.response[0].properties.nodeResourceGroup
+
+#  - name: Sleep for 300 seconds and continue with play
+#    wait_for:
+#      timeout: 300
+#    delegate_to: localhost
+
+
+  - name: Get VMScaleSet info
+    azure_rm_resource_info:
+      resource_group: "{{ nodersggroup.response[0].properties.nodeResourceGroup }}"
+      provider: compute
+      resource_type: virtualmachinescalesets
+      api_version: "2017-12-01"
+    register: vmssresources
+    until: vmssresources.response[0].name is defined
+    retries: 20
+    delay: 60
+
+#  - name: Get all resources in MC resource group
+#    azure_rm_resourcegroup_info:
+#      name: "{{ nodersggroup.response[0].properties.nodeResourceGroup }}"
+#      list_resources: yes
+#    register: allresources
+
+#  - name: Filter VMScaleSet
+#    set_fact:
+#      vmssname: "{{ item.name }}"
+#    with_items: "{{ allresources.resourcegroups[0].resources }}"
+#    when: item.type == "Microsoft.Compute/virtualMachineScaleSets"
+
+#  - debug:
+#      var: vmssname
+
+
+  - name: Ensure Assign Identity to VmScalesSet
+    shell:
+      cmd: "az vmss identity assign -g {{nodersggroup.response[0].properties.nodeResourceGroup }} -n {{ vmssresources.response[0].name }} --identities {{ usermsi_out.response.id }}"
+    register: vmssassigndetails
+
+  - debug:
+      var: vmssassigndetails
+
+
+
+
+# The following Ansible task is not adding the Private IP so removing
+
+#  - name: Create instance of Application Gateway
+#    azure_rm_appgateway:
+#      resource_group: "{{ resource_group_name }}"
+#      name: myAppGateway
+#      location : "{{ location }}"
+#      sku:
+#        name: Standard_v2
+#        tier: Standard_v2
+#        capacity: 2
+#      gateway_ip_configurations:
+#        - subnet:
+#            id: "subscriptions/{{ subscription_id }}/resourceGroups/{{ resource_group_name }}/providers/Microsoft.Network/virtualNetworks/{{ vnet_name }}/subnets/{{ subnet3_name }}"
+#          name: app_gateway_ip_config
+#      frontend_ip_configurations:
+#        - name: sample_gateway_frontend_ip_config
+#          private_ip_address: "{{ app_gateway_private_ip }}"
+#          private_ip_allocation_method: static
+#          public_ip_address: pubip2
+#      frontend_ports:
+#        - port: 80
+#          name: ag_frontend_port
+#      backend_address_pools:
+#        - name: test_backend_address_pool
+#      backend_http_settings_collection:
+#        - port: 80
+#          protocol: http
+#          cookie_based_affinity: enabled
+#          name: sample_appgateway_http_settings
+#      http_listeners:
+#        - frontend_ip_configuration: sample_gateway_frontend_ip_config
+#          frontend_port: ag_frontend_port
+#          name: sample_http_listener
+#      request_routing_rules:
+#        - rule_type: Basic
+#          backend_address_pool: test_backend_address_pool
+#          backend_http_settings: sample_appgateway_http_settings
+#          http_listener: sample_http_listener
+#          name: rule1
