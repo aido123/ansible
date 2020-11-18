@@ -11,9 +11,9 @@
     subnet1_name: adrian-sbt1
     subnet2_name: adrian-sbt2
     subnet3_name: adrian-sbt3
-    subnet1_cidr: 10.240.0.0/24
-    subnet2_cidr: 10.240.1.0/24
-    subnet3_cidr: 10.240.2.0/24
+    subnet1_cidr: "10.240.0.0/24"
+    subnet2_cidr: "10.240.1.0/24"
+    subnet3_cidr: "10.240.2.0/24"
     app_gateway_private_ip: 10.240.2.254
     dns_name: hynes.pri
     cluster_name: cluster
@@ -74,7 +74,7 @@
       resource_group: "{{ resource_group_name }}"
       virtual_network_name: "{{ vnet_name }}"
       name: "{{ subnet3_name }}"
-      address_prefix_cidr: "{{ subnet1_cidr }}"
+      address_prefix_cidr: "{{ subnet3_cidr }}"
 
   - name: Ensure Private DNS
     azure_rm_resource:
@@ -129,7 +129,7 @@
          "agentPoolProfiles": [
           {
            "name": "nodepool1",
-           "count": 1,
+           "count": 3,
            "vmSize": "Standard_DS2_v2",
            "osDiskSizeGB": 128,
            "osDiskType": "Managed",
@@ -222,7 +222,7 @@
 
   - name: Create instance of Application Gateway
     shell:
-      cmd: "az network application-gateway create -n myApplicationGateway -l {{ location }} -g {{ resource_group_name }} --sku Standard_v2 --public-ip-address pubip2 --subnet subscriptions/{{ subscription_id }}/resourceGroups/{{ resource_group_name }}/providers/Microsoft.Network/virtualNetworks/{{ vnet_name }}/subnets/{{ subnet3_name }} --private-ip-address {{ app_gateway_private_ip }}"
+      cmd: "az network application-gateway create -n myApplicationGateway -l {{ location }} -g {{ resource_group_name }} --sku Standard_v2 --public-ip-address pubip2 --subnet /subscriptions/{{ subscription_id }}/resourceGroups/{{ resource_group_name }}/providers/Microsoft.Network/virtualNetworks/{{ vnet_name }}/subnets/{{ subnet3_name }} --private-ip-address {{ app_gateway_private_ip }}"
     register: vmssassigndetails
 
 
@@ -238,7 +238,7 @@
   - debug:
       var: system_msi.response[0].identity.principalId
 
-  - name: Ensure Role Assignment of Cluster System Managed Identity and Contributor 
+  - name: Ensure Role Assignment of Cluster System Managed Identity and Contributor
     azure_rm_roleassignment:
       scope: "/subscriptions/{{ subscription_id }}"
       assignee_object_id: "{{ system_msi.response[0].identity.principalId }}"
