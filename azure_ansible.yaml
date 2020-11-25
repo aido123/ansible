@@ -2,8 +2,8 @@
   hosts: localhost
   vars:
     resource_group_name: clusterrg
-    subscription_id: b4202fc8-1ef5-4ba4-bdd0-4a7908e282e6
-    tenant_id: 9b411214-6cd9-4672-9034-b55bf7d44b12
+    subscription_id: <Sub Id>
+    tenant_id: <Tenant ID>
     contributor_roleid: b24988ac-6180-42a0-ab88-20f7382dd24c
     msi_name: msi3
     vnet_name: adrian-vnet
