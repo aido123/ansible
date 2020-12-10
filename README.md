@@ -1,7 +1,14 @@
 # ansible
 
+## App Gateway Article
+
+https://adrianhynes.medium.com/07-12-20-exposing-your-aks-workloads-using-external-dns-and-app-gateway-28a7569cf272
+
+git clone https://github.com/aido123/ansible.git
+chmod +x ansible/setup.sh
+
 ```
-ansible-playbook azure_ansible.yaml --extra-vars "resource_group_name=myrsg subscription_id=ABC123 tenant_id=DEF456 contributor_roleid=b24988ac-6180-42a0-ab88-20f7382dd24c msi_name=mymsi vnet_name=myvnet subnet1_name=mysbt1 subnet2_name=mysbt2 dns_name=cluster.name cluster_name=mycluster location=westeurope vm_username=myuser vm_password=MyPass98+332711"
+ansible-playbook ansible/azure_ansible_nginx_appgateway.yaml --extra-vars "resource_group_name=myrsg subscription_id=ABC123 tenant_id=DEF456"
 ```
 
     
