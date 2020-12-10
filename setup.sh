@@ -7,3 +7,5 @@ pip install -r azure/requirements-azure.txt
 cd azure
 ansible-galaxy collection build --force
 ansible-galaxy collection install azure-azcollection-1.2.0.tar.gz --force
+
+echo "Now run ansible-playbook ansible/azure_ansible_nginx_appgateway.yaml --extra-vars \"resource_group_name=myrsg subscription_id=ABC123 tenant_id=DEF456\""
