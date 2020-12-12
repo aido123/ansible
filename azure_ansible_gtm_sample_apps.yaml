@@ -1,0 +1,315 @@
+- name: AKS Demo Ansible Playbook on Azure Cloud Shell
+  hosts: localhost
+  vars:
+    resource_group_name: adrian-group
+    cluster1_name: akscluster1
+    cluster2_name: akscluster2
+  tasks:
+  - name: Delete kubeconfig
+    shell:
+      cmd: "rm .kube/config"
+
+  - name: Login as cluster 2 admin
+    shell:
+      cmd: "az aks get-credentials --resource-group {{ resource_group_name }} --name {{ cluster2_name }} --admin"
+
+  - name: Create Nginx North Demo Deployment
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: aks-helloworld-nginx-north
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: aks-helloworld-nginx-north
+          template:
+            metadata:
+              labels:
+                app: aks-helloworld-nginx-north
+            spec:
+              containers:
+              - name: aks-helloworld-nginx-north
+                image: mcr.microsoft.com/azuredocs/aks-helloworld:v1
+                ports:
+                - containerPort: 80
+                env:
+                - name: TITLE
+                  value: "AKS Nginx North"
+
+  - name: Create Nginx North Demo Service
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: aks-helloworld-nginx-north
+        spec:
+          ports:
+          - protocol: TCP
+            port: 80
+            targetPort: 80
+          selector:
+            app: aks-helloworld-nginx-north
+
+  - name: Create Nginx North Demo Ingress
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: networking.k8s.io/v1beta1
+        kind: Ingress
+        metadata:
+          name: aks-helloworld-nginx-north
+          annotations:
+            kubernetes.io/ingress.class: nginx
+            nginx.ingress.kubernetes.io/ssl-redirect: "false"
+            nginx.ingress.kubernetes.io/use-regex: "true"
+            nginx.ingress.kubernetes.io/rewrite-target: /$1
+        spec:
+          rules:
+          - host: nginx.northeurope.hynes.pri
+            http:
+              paths:
+              - backend:
+                  serviceName: aks-helloworld-nginx-north
+                  servicePort: 80
+                path: /(.*)
+          - host: nginx.hynes.pri
+            http:
+              paths:
+              - backend:
+                  serviceName: aks-helloworld-nginx-north
+                  servicePort: 80
+                path: /(.*)
+  - name: Create AppGW North Demo Deployment
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: aks-helloworld-appgw-north
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: aks-helloworld-appgw-north
+          template:
+            metadata:
+              labels:
+                app: aks-helloworld-appgw-north
+            spec:
+              containers:
+              - name: aks-helloworld-appgw-north
+                image: mcr.microsoft.com/azuredocs/aks-helloworld:v1
+                ports:
+                - containerPort: 80
+                env:
+                - name: TITLE
+                  value: "AKS AppGW North"
+
+  - name: Create AppGw North Demo Service
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: aks-helloworld-appgw-north
+        spec:
+          ports:
+          - protocol: TCP
+            port: 80
+            targetPort: 80
+          selector:
+            app: aks-helloworld-appgw-north
+
+  - name: Create AppGw North Demo Ingress
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: networking.k8s.io/v1beta1
+        kind: Ingress
+        metadata:
+          name: aks-helloworld-appgw-north
+          annotations:
+            kubernetes.io/ingress.class: azure/application-gateway
+        spec:
+          rules:
+          - host: appgw.northeurope.hynes.pri
+            http:
+              paths:
+              - backend:
+                  serviceName: aks-helloworld-appgw-north
+                  servicePort: 80
+                path: /
+          - host: appgw.hynes.pri
+            http:
+              paths:
+              - backend:
+                  serviceName: aks-helloworld-appgw-north
+                  servicePort: 80
+                path: /
+
+  - name: Login as cluster 1 admin
+    shell:
+      cmd: "az aks get-credentials --resource-group {{ resource_group_name }} --name {{ cluster1_name }} --admin"
+
+  - name: Create Nginx West Demo Deployment
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: aks-helloworld-nginx-west
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: aks-helloworld-nginx-west
+          template:
+            metadata:
+              labels:
+                app: aks-helloworld-nginx-west
+            spec:
+              containers:
+              - name: aks-helloworld-nginx-west
+                image: mcr.microsoft.com/azuredocs/aks-helloworld:v1
+                ports:
+                - containerPort: 80
+                env:
+                - name: TITLE
+                  value: "AKS Nginx West"
+
+  - name: Create Nginx West Demo Service
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: aks-helloworld-nginx-west
+        spec:
+          ports:
+          - protocol: TCP
+            port: 80
+            targetPort: 80
+          selector:
+            app: aks-helloworld-nginx-west
+
+  - name: Create Nginx West Demo Ingress
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: networking.k8s.io/v1beta1
+        kind: Ingress
+        metadata:
+          name: aks-helloworld-nginx-west
+          annotations:
+            kubernetes.io/ingress.class: nginx
+            nginx.ingress.kubernetes.io/ssl-redirect: "false"
+            nginx.ingress.kubernetes.io/use-regex: "true"
+            nginx.ingress.kubernetes.io/rewrite-target: /$1
+        spec:
+          rules:
+          - host: nginx.westeurope.hynes.pri
+            http:
+              paths:
+              - backend:
+                  serviceName: aks-helloworld-nginx-west
+                  servicePort: 80
+                path: /(.*)
+          - host: nginx.hynes.pri
+            http:
+              paths:
+              - backend:
+                  serviceName: aks-helloworld-nginx-west
+                  servicePort: 80
+                path: /(.*)
+
+  - name: Create AppGW West Demo Deployment
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: aks-helloworld-appgw-west
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: aks-helloworld-appgw-west
+          template:
+            metadata:
+              labels:
+                app: aks-helloworld-appgw-west
+            spec:
+              containers:
+              - name: aks-helloworld-appgw-west
+                image: mcr.microsoft.com/azuredocs/aks-helloworld:v1
+                ports:
+                - containerPort: 80
+                env:
+                - name: TITLE
+                  value: "AKS AppGW West"
+
+  - name: Create AppGw West Demo Service
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: aks-helloworld-appgw-west
+        spec:
+          ports:
+          - protocol: TCP
+            port: 80
+            targetPort: 80
+          selector:
+            app: aks-helloworld-appgw-west
+
+  - name: Create AppGw West Demo Ingress
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: networking.k8s.io/v1beta1
+        kind: Ingress
+        metadata:
+          name: aks-helloworld-appgw-west
+          annotations:
+            kubernetes.io/ingress.class: azure/application-gateway
+        spec:
+          rules:
+          - host: appgw.westeurope.hynes.pri
+            http:
+              paths:
+              - backend:
+                  serviceName: aks-helloworld-appgw-west
+                  servicePort: 80
+                path: /
+          - host: appgw.hynes.pri
+            http:
+              paths:
+              - backend:
+                  serviceName: aks-helloworld-appgw-west
+                  servicePort: 80
+                path: /
