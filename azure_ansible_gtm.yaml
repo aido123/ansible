@@ -1,0 +1,874 @@
+- name: AKS Demo Ansible Playbook on Azure Cloud Shell
+  hosts: localhost
+  vars:
+    resource_group_name: adrian-group
+    subscription_id: <Sub ID>
+    tenant_id: <Tenant ID>
+    contributor_roleid: b24988ac-6180-42a0-ab88-20f7382dd24c
+    msi1_name: msi1
+    msi2_name: msi2
+    vnet1_name: adrian-vnet1
+    vnet2_name: adrian-vnet2
+    vnet3_name: adrian-vnet3
+    vnet1_cidr: 10.240.0.0/16
+    vnet2_cidr: 10.241.0.0/16
+    vnet3_cidr: 10.242.0.0/16
+    vnet1_subnet1_name: adrian-vnet1-sbt1
+    vnet1_subnet2_name: adrian-vnet1-sbt2
+    vnet2_subnet1_name: adrian-vnet2-sbt1
+    vnet2_subnet2_name: adrian-vnet2-sbt2
+    vnet3_subnet1_name: adrian-vnet3-sbt1
+    vnet1_subnet1_cidr: "10.240.0.0/24"
+    vnet1_subnet2_cidr: "10.240.1.0/24"
+    vnet2_subnet1_cidr: "10.241.0.0/24"
+    vnet2_subnet2_cidr: "10.241.1.0/24"
+    vnet3_subnet1_cidr: "10.242.0.0/24"
+    nginx1_private_ip: 10.240.0.254
+    app_gateway1_private_ip: 10.240.1.254
+    nginx2_private_ip: 10.241.0.254
+    app_gateway2_private_ip: 10.241.1.254
+    app_gateway1_name: appgateway1
+    app_gateway2_name: appgateway2
+    dns1_name: westeurope.hynes.pri
+    dns2_name: northeurope.hynes.pri
+    dns3_name: hynes.pri
+    cluster1_name: akscluster1
+    cluster2_name: akscluster2
+    location1: westeurope
+    location2: northeurope
+    location3: northeurope
+    vm_password: hard2Guess80542
+    vm_username: myuser
+  tasks:
+  - name: Ensure Resource Group
+    azure_rm_resourcegroup:
+      name: "{{ resource_group_name }}"
+      location: "{{ location1 }}"
+
+  - name: Ensure User MSI 1
+    azure_rm_resource:
+      resource_group: "{{ resource_group_name }}"
+      provider: ManagedIdentity
+      resource_type: userAssignedIdentities
+      resource_name: "{{ msi1_name }}"
+      api_version: '2018-11-30'
+      idempotency: yes
+      state: present
+      body:
+        location: "{{ location1 }}"
+    register: usermsi1_out
+
+  - name: Ensure User MSI 2
+    azure_rm_resource:
+      resource_group: "{{ resource_group_name }}"
+      provider: ManagedIdentity
+      resource_type: userAssignedIdentities
+      resource_name: "{{ msi2_name }}"
+      api_version: '2018-11-30'
+      idempotency: yes
+      state: present
+      body:
+        location: "{{ location2 }}"
+    register: usermsi2_out
+
+  - name: Sleep for 30 seconds to make sure Msis created
+    wait_for:
+      timeout: 30
+    delegate_to: localhost
+
+  - name: Ensure Role Assignment of User MSI 1 to Contributor
+    azure_rm_roleassignment:
+      scope: "/subscriptions/{{ subscription_id }}"
+      assignee_object_id: "{{ usermsi1_out.response.properties.principalId }}"
+      role_definition_id:
+        "/subscriptions/{{ subscription_id }}/providers/Microsoft.Authorization/roleDefinitions/{{ contributor_roleid }}"
+
+  - name: Ensure Role Assignment of User MSI 2 to Contributor
+    azure_rm_roleassignment:
+      scope: "/subscriptions/{{ subscription_id }}"
+      assignee_object_id: "{{ usermsi2_out.response.properties.principalId }}"
+      role_definition_id:
+        "/subscriptions/{{ subscription_id }}/providers/Microsoft.Authorization/roleDefinitions/{{ contributor_roleid }}"
+
+
+  - name: Ensure VNet 1
+    azure_rm_virtualnetwork:
+      resource_group: "{{ resource_group_name }}"
+      name: "{{ vnet1_name }}"
+      location: "{{ location1 }}"
+      address_prefixes_cidr:
+        - "{{ vnet1_cidr }}"
+
+  - name: Ensure VNet 2
+    azure_rm_virtualnetwork:
+      resource_group: "{{ resource_group_name }}"
+      name: "{{ vnet2_name }}"
+      location: "{{ location2 }}"
+      address_prefixes_cidr:
+        - "{{ vnet2_cidr }}"
+
+  - name: Ensure VNet 3
+    azure_rm_virtualnetwork:
+      resource_group: "{{ resource_group_name }}"
+      name: "{{ vnet3_name }}"
+      location: "{{ location3 }}"
+      address_prefixes_cidr:
+        - "{{ vnet3_cidr }}"
+
+
+  - name: Ensure Vnet 1 Subnet 1
+    azure_rm_subnet:
+      resource_group: "{{ resource_group_name }}"
+      virtual_network_name: "{{ vnet1_name }}"
+      name: "{{ vnet1_subnet1_name }}"
+      address_prefix_cidr: "{{ vnet1_subnet1_cidr }}"
+  - name: Ensure Vnet 1 Subnet 2
+    azure_rm_subnet:
+      resource_group: "{{ resource_group_name }}"
+      virtual_network_name: "{{ vnet1_name }}"
+      name: "{{ vnet1_subnet2_name }}"
+      address_prefix_cidr: "{{ vnet1_subnet2_cidr }}"
+
+  - name: Ensure Vnet 2 Subnet 1
+    azure_rm_subnet:
+      resource_group: "{{ resource_group_name }}"
+      virtual_network_name: "{{ vnet2_name }}"
+      name: "{{ vnet2_subnet1_name }}"
+      address_prefix_cidr: "{{ vnet2_subnet1_cidr }}"
+  - name: Ensure Vnet 2 Subnet 2
+    azure_rm_subnet:
+      resource_group: "{{ resource_group_name }}"
+      virtual_network_name: "{{ vnet2_name }}"
+      name: "{{ vnet2_subnet2_name }}"
+      address_prefix_cidr: "{{ vnet2_subnet2_cidr }}"
+
+  - name: Ensure Vnet 3 Subnet 1
+    azure_rm_subnet:
+      resource_group: "{{ resource_group_name }}"
+      virtual_network_name: "{{ vnet3_name }}"
+      name: "{{ vnet3_subnet1_name }}"
+      address_prefix_cidr: "{{ vnet3_subnet1_cidr }}"
+
+  - name: Peer vnet 3 to vnet 1
+    azure_rm_virtualnetworkpeering:
+      resource_group: "{{ resource_group_name }}"
+      name: "peer-3-to-1"
+      virtual_network: "{{ vnet3_name }}"
+      remote_virtual_network:
+        resource_group: "{{ resource_group_name }}"
+        name: "{{ vnet1_name }}"
+      allow_virtual_network_access: true
+      allow_forwarded_traffic: true
+
+  - name: Peer vnet 1 to vnet 3
+    azure_rm_virtualnetworkpeering:
+      resource_group: "{{ resource_group_name }}"
+      name: "peer-1-to-3"
+      virtual_network: "{{ vnet1_name }}"
+      remote_virtual_network:
+        resource_group: "{{ resource_group_name }}"
+        name: "{{ vnet3_name }}"
+      allow_virtual_network_access: true
+      allow_forwarded_traffic: true
+
+  - name: Peer vnet 3 to vnet 2
+    azure_rm_virtualnetworkpeering:
+      resource_group: "{{ resource_group_name }}"
+      name: "peer-3-to-2"
+      virtual_network: "{{ vnet3_name }}"
+      remote_virtual_network:
+        resource_group: "{{ resource_group_name }}"
+        name: "{{ vnet2_name }}"
+      allow_virtual_network_access: true
+      allow_forwarded_traffic: true
+
+  - name: Peer vnet 2 to vnet 3
+    azure_rm_virtualnetworkpeering:
+      resource_group: "{{ resource_group_name }}"
+      name: "peer-2-to-3"
+      virtual_network: "{{ vnet2_name }}"
+      remote_virtual_network:
+        resource_group: "{{ resource_group_name }}"
+        name: "{{ vnet3_name }}"
+      allow_virtual_network_access: true
+      allow_forwarded_traffic: true
+
+  - name: Ensure Private DNS 1
+    azure_rm_resource:
+      resource_group: "{{ resource_group_name }}"
+      provider: Network
+      resource_type: privateDnsZones
+      resource_name: "{{ dns1_name}}"
+      api_version: '2018-09-01'
+      body:
+        location: Global
+
+  - name: Ensure Private DNS 2
+    azure_rm_resource:
+      resource_group: "{{ resource_group_name }}"
+      provider: Network
+      resource_type: privateDnsZones
+      resource_name: "{{ dns2_name}}"
+      api_version: '2018-09-01'
+      body:
+        location: Global
+
+  - name: Ensure Private DNS 3
+    azure_rm_resource:
+      resource_group: "{{ resource_group_name }}"
+      provider: Network
+      resource_type: privateDnsZones
+      resource_name: "{{ dns3_name}}"
+      api_version: '2018-09-01'
+      body:
+        location: Global
+
+  - name: Sleep for 30 seconds to make sure private dns created ok
+    wait_for:
+      timeout: 30
+    delegate_to: localhost
+
+  - name: Link private dns 1 to vnet 3
+    azure_rm_resource:
+      api_version: '2018-09-01'
+      resource_group: "{{ resource_group_name }}"
+      provider: network
+      resource_type: privatednszones
+      resource_name: "{{ dns1_name}}"
+      subresource:
+        - type: virtualnetworklinks
+          name: linkdns1
+      body:
+        location: Global
+        properties:
+          virtualNetwork:
+            id: "/subscriptions/{{ subscription_id }}/resourceGroups/{{ resource_group_name }}/providers/Microsoft.Network/virtualNetworks/{{ vnet3_name }}"
+          registrationEnabled: false
+
+  - name: Link private dns 2 to vnet 3
+    azure_rm_resource:
+      api_version: '2018-09-01'
+      resource_group: "{{ resource_group_name }}"
+      provider: network
+      resource_type: privatednszones
+      resource_name: "{{ dns2_name}}"
+      subresource:
+        - type: virtualnetworklinks
+          name: linkdns2
+      body:
+        location: Global
+        properties:
+          virtualNetwork:
+            id: "/subscriptions/{{ subscription_id }}/resourceGroups/{{ resource_group_name }}/providers/Microsoft.Network/virtualNetworks/{{ vnet3_name }}"
+          registrationEnabled: false
+
+  - name: Link private dns 3 to vnet 3
+    azure_rm_resource:
+      api_version: '2018-09-01'
+      resource_group: "{{ resource_group_name }}"
+      provider: network
+      resource_type: privatednszones
+      resource_name: "{{ dns3_name}}"
+      subresource:
+        - type: virtualnetworklinks
+          name: linkdns3
+      body:
+        location: Global
+        properties:
+          virtualNetwork:
+            id: "/subscriptions/{{ subscription_id }}/resourceGroups/{{ resource_group_name }}/providers/Microsoft.Network/virtualNetworks/{{ vnet3_name }}"
+          registrationEnabled: false
+
+
+  - name: Ensure AKS Cluster 1
+    azure_rm_resource:
+      api_version: '2020-09-01'
+      resource_group: "{{ resource_group_name }}"
+      provider: ContainerService
+      resource_type: managedClusters
+      resource_name: "{{ cluster1_name }}"
+      idempotency: yes
+      body:
+        {
+        "id": "/subscriptions/{{ subscription_id }}/resourcegroups/{{ resource_group_name }}/providers/Microsoft.ContainerService/managedClusters/{{ cluster1_name }}",
+        "location": "{{ location1 }}",
+        "name": "{{ cluster1_name }}",
+        "type": "Microsoft.ContainerService/ManagedClusters",
+        "properties": {
+         "kubernetesVersion": "1.17.13",
+         "dnsPrefix": "adrianhynes",
+         "agentPoolProfiles": [
+          {
+           "name": "nodepool1",
+           "count": 1,
+           "vmSize": "Standard_DS2_v2",
+           "osDiskSizeGB": 128,
+           "osDiskType": "Managed",
+           "vnetSubnetID": "/subscriptions/{{ subscription_id }}/resourceGroups/{{ resource_group_name }}/providers/Microsoft.Network/virtualNetworks/{{ vnet1_name }}/subnets/{{ vnet1_subnet1_name }}",
+           "maxPods": 30,
+           "type": "VirtualMachineScaleSets",
+           "availabilityZones": [
+            "1"
+           ],
+           "orchestratorVersion": "1.17.13",
+           "enableNodePublicIP": false,
+           "nodeLabels": {},
+           "mode": "System",
+           "osType": "Linux",
+           "nodeImageVersion": "AKSUbuntu-1604-2020.10.28"
+          }
+         ],
+         "linuxProfile": {
+          "adminUsername": "azureuser",
+          "ssh": {
+           "publicKeys": [
+            {
+             "keyData": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCj7MYU2Glrmm5EaOtH5oB98xgSRUuewGBLDTEZzWEVzlCxpGQBwGNbeJhiCCyhYx6hFmNEZKFtGJQudOEl3cVaDRdqiDFgiwrF3frj1OnOP/86bPtayGW7zeStjpBSq2yKQshfzhAcvjAe6MIkebkBPnLToKIKWcJbpHo6s/0dMgjvPCz4aLOle55w6p68Tkklp2AG3Vgirmpm2quB2CqdRZJiQQH7xMjpdLI5eAhWbssE4J4na8aBc1B1nX49LXDQNZ1FS8QaPhhyA5WklAM3cDLwFrDx1A8wFsXqLbh2HUsbvA7XBuEzk395ZhQeS5x1YoMgvg+gJ3N1ZZCZUkTp"
+            }
+           ]
+          }
+         },
+         "servicePrincipalProfile": {
+          "clientId": "msi"
+         },
+         "addonProfiles": {
+          "KubeDashboard": {
+           "enabled": false,
+           "config": null
+          }
+         },
+         "enableRBAC": true,
+         "networkProfile": {
+          "networkPlugin": "azure",
+          "loadBalancerSku": "standard",
+          "loadBalancerProfile": {
+           "managedOutboundIPs": {
+            "count": 1
+           }
+          },
+          "serviceCidr": "10.0.0.0/16",
+          "dnsServiceIP": "10.0.0.10",
+          "dockerBridgeCidr": "172.17.0.1/16",
+          "outboundType": "loadBalancer"
+         },
+         "aadProfile": {
+          "managed": true,
+          "adminGroupObjectIDs": null,
+          "tenantID": "{{ tenant_id }}"
+         },
+         "maxAgentPools": 10
+        },
+        "identity": {
+          "type": "SystemAssigned"
+        },
+        "sku": {
+         "name": "Basic",
+         "tier": "Free"
+        }
+       }
+    register: aks1
+
+
+  - name: Ensure AKS Cluster 2
+    azure_rm_resource:
+      api_version: '2020-09-01'
+      resource_group: "{{ resource_group_name }}"
+      provider: ContainerService
+      resource_type: managedClusters
+      resource_name: "{{ cluster2_name }}"
+      idempotency: yes
+      body:
+        {
+        "id": "/subscriptions/{{ subscription_id }}/resourcegroups/{{ resource_group_name }}/providers/Microsoft.ContainerService/managedClusters/{{ cluster2_name }}",
+        "location": "{{ location2 }}",
+        "name": "{{ cluster2_name }}",
+        "type": "Microsoft.ContainerService/ManagedClusters",
+        "properties": {
+         "kubernetesVersion": "1.17.13",
+         "dnsPrefix": "adrianhynes",
+         "agentPoolProfiles": [
+          {
+           "name": "nodepool1",
+           "count": 1,
+           "vmSize": "Standard_DS2_v2",
+           "osDiskSizeGB": 128,
+           "osDiskType": "Managed",
+           "vnetSubnetID": "/subscriptions/{{ subscription_id }}/resourceGroups/{{ resource_group_name }}/providers/Microsoft.Network/virtualNetworks/{{ vnet2_name }}/subnets/{{ vnet2_subnet1_name }}",
+           "maxPods": 30,
+           "type": "VirtualMachineScaleSets",
+           "availabilityZones": [
+            "1"
+           ],
+           "orchestratorVersion": "1.17.13",
+           "enableNodePublicIP": false,
+           "nodeLabels": {},
+           "mode": "System",
+           "osType": "Linux",
+           "nodeImageVersion": "AKSUbuntu-1604-2020.10.28"
+          }
+         ],
+         "linuxProfile": {
+          "adminUsername": "azureuser",
+          "ssh": {
+           "publicKeys": [
+            {
+             "keyData": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCj7MYU2Glrmm5EaOtH5oB98xgSRUuewGBLDTEZzWEVzlCxpGQBwGNbeJhiCCyhYx6hFmNEZKFtGJQudOEl3cVaDRdqiDFgiwrF3frj1OnOP/86bPtayGW7zeStjpBSq2yKQshfzhAcvjAe6MIkebkBPnLToKIKWcJbpHo6s/0dMgjvPCz4aLOle55w6p68Tkklp2AG3Vgirmpm2quB2CqdRZJiQQH7xMjpdLI5eAhWbssE4J4na8aBc1B1nX49LXDQNZ1FS8QaPhhyA5WklAM3cDLwFrDx1A8wFsXqLbh2HUsbvA7XBuEzk395ZhQeS5x1YoMgvg+gJ3N1ZZCZUkTp"
+            }
+           ]
+          }
+         },
+         "servicePrincipalProfile": {
+          "clientId": "msi"
+         },
+         "addonProfiles": {
+          "KubeDashboard": {
+           "enabled": false,
+           "config": null
+          }
+         },
+         "enableRBAC": true,
+         "networkProfile": {
+          "networkPlugin": "azure",
+          "loadBalancerSku": "standard",
+          "loadBalancerProfile": {
+           "managedOutboundIPs": {
+            "count": 1
+           }
+          },
+          "serviceCidr": "10.0.0.0/16",
+          "dnsServiceIP": "10.0.0.10",
+          "dockerBridgeCidr": "172.17.0.1/16",
+          "outboundType": "loadBalancer"
+         },
+         "aadProfile": {
+          "managed": true,
+          "adminGroupObjectIDs": null,
+          "tenantID": "{{ tenant_id }}"
+         },
+         "maxAgentPools": 10
+        },
+        "identity": {
+          "type": "SystemAssigned"
+        },
+        "sku": {
+         "name": "Basic",
+         "tier": "Free"
+        }
+       }
+    register: aks2
+
+
+  - name: Create Windows VM
+    azure_rm_virtualmachine:
+      resource_group: "{{ resource_group_name }}"
+      name: vm1
+      admin_username: "{{ vm_username }}"
+      admin_password: "{{ vm_password }}"
+      location: "{{ location3 }}"
+      subnet_name: "{{ vnet3_subnet1_name }}"
+      virtual_network_name: "{{ vnet3_name }}"
+      vm_size: Standard_DS1_v2
+      os_type: Windows
+      image:
+        offer: WindowsServer
+        publisher: MicrosoftWindowsServer
+        sku: 2016-Datacenter
+        version: latest
+
+  - name: Create a public ip address 1
+    azure_rm_publicipaddress:
+      resource_group: "{{ resource_group_name }}"
+      name: pubip1
+      location: "{{ location1 }}"
+      sku: standard
+      allocation_method: static
+
+  - name: Create a public ip address 2
+    azure_rm_publicipaddress:
+      resource_group: "{{ resource_group_name }}"
+      name: pubip2
+      location: "{{ location2 }}"
+      sku: standard
+      allocation_method: static
+
+  - name: Create instance of Application Gateway 1
+    shell:
+      cmd: "az network application-gateway create -n {{ app_gateway1_name }} -l {{ location1 }} -g {{ resource_group_name }} --sku Standard_v2 --public-ip-address pubip1 --subnet /subscriptions/{{ subscription_id }}/resourceGroups/{{ resource_group_name }}/providers/Microsoft.Network/virtualNetworks/{{ vnet1_name }}/subnets/{{ vnet1_subnet2_name }} --private-ip-address {{ app_gateway1_private_ip }}"
+
+  - name: Create instance of Application Gateway 2
+    shell:
+      cmd: "az network application-gateway create -n {{ app_gateway2_name }} -l {{ location2 }} -g {{ resource_group_name }} --sku Standard_v2 --public-ip-address pubip2 --subnet /subscriptions/{{ subscription_id }}/resourceGroups/{{ resource_group_name }}/providers/Microsoft.Network/virtualNetworks/{{ vnet2_name }}/subnets/{{ vnet2_subnet2_name }} --private-ip-address {{ app_gateway2_private_ip }}"
+
+  - name: Ensure Cluster System Managed Identity 1 available
+    azure_rm_resource_info:
+      resource_group: "{{ resource_group_name }}"
+      provider: ContainerService
+      resource_type: ManagedClusters
+      resource_name: "{{ cluster1_name }}"
+      api_version: '2020-11-01'
+    register: system_msi1
+
+  - name: Ensure Cluster System Managed Identity 2 available
+    azure_rm_resource_info:
+      resource_group: "{{ resource_group_name }}"
+      provider: ContainerService
+      resource_type: ManagedClusters
+      resource_name: "{{ cluster2_name }}"
+      api_version: '2020-11-01'
+    register: system_msi2
+
+  - name: Ensure Role Assignment of Cluster System Managed Identity 1 and Contributor
+    azure_rm_roleassignment:
+      scope: "/subscriptions/{{ subscription_id }}"
+      assignee_object_id: "{{ system_msi1.response[0].identity.principalId }}"
+      role_definition_id:
+        "/subscriptions/{{ subscription_id }}/providers/Microsoft.Authorization/roleDefinitions/{{ contributor_roleid }}"
+
+  - name: Ensure Role Assignment of Cluster System Managed Identity 2 and Contributor
+    azure_rm_roleassignment:
+      scope: "/subscriptions/{{ subscription_id }}"
+      assignee_object_id: "{{ system_msi2.response[0].identity.principalId }}"
+      role_definition_id:
+        "/subscriptions/{{ subscription_id }}/providers/Microsoft.Authorization/roleDefinitions/{{ contributor_roleid }}"
+
+
+  - name: Ensure Node Resource Group 1
+    azure_rm_resource_info:
+      resource_group: "{{ resource_group_name }}"
+      provider: ContainerService
+      resource_type: ManagedClusters
+      resource_name: "{{ cluster1_name }}"
+      api_version: '2020-11-01'
+    register: nodersggroup1
+  - debug:
+       var: nodersggroup1.response[0].properties.nodeResourceGroup
+
+  - name: Ensure Node Resource Group 2
+    azure_rm_resource_info:
+      resource_group: "{{ resource_group_name }}"
+      provider: ContainerService
+      resource_type: ManagedClusters
+      resource_name: "{{ cluster2_name }}"
+      api_version: '2020-11-01'
+    register: nodersggroup2
+  - debug:
+       var: nodersggroup2.response[0].properties.nodeResourceGroup
+
+
+
+  - name: Get VMScaleSet 1 info
+    azure.azcollection.azure_rm_resource_info_rt:
+      resource_group: "{{ nodersggroup1.response[0].properties.nodeResourceGroup }}"
+      provider: compute
+      resource_type: virtualmachinescalesets
+      api_version: "2017-12-01"
+      location: "{{ location1 }}"
+    register: vmssresources1
+    until: vmssresources1.response[0].name is defined
+    retries: 20
+    delay: 60
+
+  - name: Get VMScaleSet 2 info
+    azure.azcollection.azure_rm_resource_info_rt:
+      resource_group: "{{ nodersggroup2.response[0].properties.nodeResourceGroup }}"
+      provider: compute
+      resource_type: virtualmachinescalesets
+      api_version: "2017-12-01"
+      location: "{{ location2 }}"
+    register: vmssresources2
+    until: vmssresources2.response[0].name is defined
+    retries: 20
+    delay: 60
+
+
+  - name: Ensure Assign Identity to VmScalesSet 1
+    shell:
+      cmd: "az vmss identity assign -g {{nodersggroup1.response[0].properties.nodeResourceGroup }} -n {{ vmssresources1.response[0].name }} --identities {{ usermsi1_out.response.id }}"
+
+  - name: Ensure Assign Identity to VmScalesSet 2
+    shell:
+      cmd: "az vmss identity assign -g {{nodersggroup2.response[0].properties.nodeResourceGroup }} -n {{ vmssresources2.response[0].name }} --identities {{ usermsi2_out.response.id }}"
+
+#  - name: Delete kubeconfig
+#    shell:
+#      cmd: "rm .kube/config"
+
+  - name: Login as cluster 1 admin
+    shell:
+      cmd: "az aks get-credentials --resource-group {{ resource_group_name }} --name {{ cluster1_name }} --admin"
+
+  - name: Git clone App Gateway
+    ansible.builtin.git:
+      repo: "https://github.com/aido123/ingress-azure.git"
+      dest: /tmp/helm_repo/ingress-azure
+
+  - name: Deploy App Gateway
+    community.kubernetes.helm:
+      name: ingress-azure
+      chart_ref: /tmp/helm_repo/ingress-azure
+      release_namespace: default
+      values:
+        appgw:
+          resourceGroup: "{{ resource_group_name }}"
+          environment: "AZUREPUBLICCLOUD"
+          subscriptionId: "{{ subscription_id }}"
+          tenantId: "{{ tenant_id }}"
+          shared: false
+          name: "{{ app_gateway1_name }}"
+          usePrivateIP: true
+        armAuth:
+          type: "aadPodIdentity"
+          identityClientID: "{{ usermsi1_out.response.properties.clientId }}"
+        rbac:
+          enabled: true
+        verbosityLevel: 3
+        aksClusterConfiguration:
+          apiServerAddress: "{{ aks1.response.properties.fqdn }}"
+
+  - name: Add nginxc helm chart repo
+    community.kubernetes.helm_repository:
+      name: ingress-nginx
+      repo_url: "https://kubernetes.github.io/ingress-nginx"
+
+  - name: Deploy nginx ingress controller
+    community.kubernetes.helm:
+      name: nginx-ingress
+      chart_ref: ingress-nginx/ingress-nginx
+      release_namespace: default
+      values:
+        defaultBackend:
+          nodeSelector:
+            beta.kubernetes.io/os: linux
+        controller:
+          replicaCount: 2
+          nodeSelector: 
+            beta.kubernetes.io/os: linux
+          service:
+            loadBalancerIP: "{{ nginx1_private_ip }}"
+            annotations:
+              service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+
+
+  - name: Create a Service account for  external dns
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: external-dns
+  - name: Create cluster role for  external dns
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: rbac.authorization.k8s.io/v1beta1
+        kind: ClusterRole
+        metadata:
+          name: external-dns
+        rules:
+        - apiGroups: [""]
+          resources: ["services","endpoints","pods"]
+          verbs: ["get","watch","list"]
+        - apiGroups: ["extensions","networking.k8s.io"]
+          resources: ["ingresses"] 
+          verbs: ["get","watch","list"]
+        - apiGroups: [""]
+          resources: ["nodes"]
+          verbs: ["list"]
+  - name: Create cluster role binding for  external dns
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: rbac.authorization.k8s.io/v1beta1
+        kind: ClusterRoleBinding
+        metadata:
+          name: external-dns-viewer
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: external-dns
+        subjects:
+        - kind: ServiceAccount
+          name: external-dns
+          namespace: default
+  - name: Create deployment for  external dns
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: external-dns
+        spec:
+          strategy:
+            type: Recreate
+          selector:
+            matchLabels:
+              app: external-dns
+          template:
+            metadata:
+              labels:
+                app: external-dns
+            spec:
+              serviceAccountName: external-dns
+              containers:
+              - name: external-dns
+                args:
+                - --source=service
+                - --source=ingress
+                - --domain-filter={{ dns1_name }}
+                - --provider=azure-private-dns
+                - --azure-resource-group={{ resource_group_name }}
+                - --azure-subscription-id={{ subscription_id }}
+                env:
+                - name: AZURE_TENANT_ID
+                  value: "{{ tenant_id }}"
+                - name: AZURE_CLIENT_ID
+                  value: "{{ usermsi1_out.response.properties.clientId }}"
+                - name: AZURE_SUBSCRIPTION_ID
+                  value: "{{ subscription_id }}"
+                image: k8s.gcr.io/external-dns/external-dns:v0.7.0
+
+  - name: Login as cluster 2 admin
+    shell:
+      cmd: "az aks get-credentials --resource-group {{ resource_group_name }} --name {{ cluster2_name }} --admin"
+
+  - name: Git clone App Gateway Helm Chart
+    ansible.builtin.git:
+      repo: "https://github.com/aido123/ingress-azure.git"
+      dest: /tmp/helm_repo/ingress-azure
+
+  - name: Deploy App Gateway 2
+    community.kubernetes.helm:
+      name: ingress-azure
+      chart_ref: /tmp/helm_repo/ingress-azure
+      release_namespace: default
+      values:
+        appgw:
+          resourceGroup: "{{ resource_group_name }}"
+          environment: "AZUREPUBLICCLOUD"
+          subscriptionId: "{{ subscription_id }}"
+          tenantId: "{{ tenant_id }}"
+          shared: false
+          name: "{{ app_gateway2_name }}"
+          usePrivateIP: true
+        armAuth:
+          type: "aadPodIdentity"
+          identityClientID: "{{ usermsi2_out.response.properties.clientId }}"
+        rbac:
+          enabled: true
+        verbosityLevel: 3
+        aksClusterConfiguration:
+          apiServerAddress: "{{ aks2.response.properties.fqdn }}"
+
+  - name: Add nginx ingress helm repo
+    community.kubernetes.helm_repository:
+      name: ingress-nginx
+      repo_url: "https://kubernetes.github.io/ingress-nginx"
+
+  - name: Deploy nginx controller
+    community.kubernetes.helm:
+      name: nginx-ingress
+      chart_ref: ingress-nginx/ingress-nginx
+      release_namespace: default
+      values:
+        defaultBackend:
+          nodeSelector:
+            beta.kubernetes.io/os: linux
+        controller:
+          replicaCount: 2
+          nodeSelector: 
+            beta.kubernetes.io/os: linux
+          service:
+            loadBalancerIP: "{{ nginx2_private_ip }}"
+            annotations:
+              service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+
+
+  - name: Create a Service Account for external dns
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: external-dns
+  - name: Create Cluster Role for  external dns
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: rbac.authorization.k8s.io/v1beta1
+        kind: ClusterRole
+        metadata:
+          name: external-dns
+        rules:
+        - apiGroups: [""]
+          resources: ["services","endpoints","pods"]
+          verbs: ["get","watch","list"]
+        - apiGroups: ["extensions","networking.k8s.io"]
+          resources: ["ingresses"] 
+          verbs: ["get","watch","list"]
+        - apiGroups: [""]
+          resources: ["nodes"]
+          verbs: ["list"]
+  - name: Create Cluster ole Binding for external dns
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: rbac.authorization.k8s.io/v1beta1
+        kind: ClusterRoleBinding
+        metadata:
+          name: external-dns-viewer
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: external-dns
+        subjects:
+        - kind: ServiceAccount
+          name: external-dns
+          namespace: default
+  - name: Create Deployment for  external dns
+    community.kubernetes.k8s:
+      state: present
+      namespace: default
+      definition:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: external-dns
+        spec:
+          strategy:
+            type: Recreate
+          selector:
+            matchLabels:
+              app: external-dns
+          template:
+            metadata:
+              labels:
+                app: external-dns
+            spec:
+              serviceAccountName: external-dns
+              containers:
+              - name: external-dns
+                args:
+                - --source=service
+                - --source=ingress
+                - --domain-filter={{ dns2_name }}
+                - --provider=azure-private-dns
+                - --azure-resource-group={{ resource_group_name }}
+                - --azure-subscription-id={{ subscription_id }}
+                env:
+                - name: AZURE_TENANT_ID
+                  value: "{{ tenant_id }}"
+                - name: AZURE_CLIENT_ID
+                  value: "{{ usermsi2_out.response.properties.clientId }}"
+                - name: AZURE_SUBSCRIPTION_ID
+                  value: "{{ subscription_id }}"
+                image: k8s.gcr.io/external-dns/external-dns:v0.7.0
