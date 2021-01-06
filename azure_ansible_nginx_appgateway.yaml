@@ -3,8 +3,8 @@
   vars:
     resource_group_name: adrian-group
     subscription_id: <sub id>
-    tenant_id: 9b411214-6cd9-4672-9034-b55bf7d44b12
-    contributor_roleid: <tenant id>
+    tenant_id: <tenant id>
+    contributor_roleid: b24988ac-6180-42a0-ab88-20f7382dd24c
     msi_name: msi3
     vnet_name: adrian-vnet
     vnet_cidr: 10.240.0.0/16
