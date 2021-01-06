@@ -385,7 +385,7 @@
                 - --domain-filter="{{ dns_name }}"
                 - --provider=azure-private-dns
                 - --azure-resource-group="{{ resource_group_name }}"
-                - --azure-subscription-id="{{ subscription_id }}"
+                - --azure-subscription-id={{ subscription_id }}
                 env:
                 - name: AZURE_TENANT_ID
                   value: "{{ tenant_id }}"
